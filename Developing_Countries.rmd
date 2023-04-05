@@ -1,7 +1,6 @@
 ---
 title: "Project"
 author: "Siddhant Mhapankar"
-date: "2022-10-13"
 output: html_document
 ---
 ```{r}
