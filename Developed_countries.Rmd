@@ -1,7 +1,6 @@
 ---
 title: "jcomp2"
 author: "Siddhant Mhapankar"
-date: "2022-11-11"
 output: html_document
 ---
 
