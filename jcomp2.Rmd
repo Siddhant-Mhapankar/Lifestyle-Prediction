@@ -1,0 +1,342 @@
+---
+title: "jcomp2"
+author: "Siddhant Mhapankar"
+date: "2022-11-11"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(survival)
+library(gbm)
+library(caret)
+library(pROC)
+library(tree)
+library(ISLR)
+library(vip)
+library(e1071)
+library(tidyverse)
+library(reshape2)
+library(ggfortify)
+library(rpart)
+library(skimr)
+library(corrplot)
+library(kableExtra)
+library(patchwork)
+library(directlabels)
+library(randomForest)
+library(hrbrthemes)
+library(viridis)
+library(RColorBrewer)
+heart<-read.csv("heart2.csv")
+```
+
+```{r}
+head(heart)
+```
+
+```{r}
+# Assign ID
+heart$id <- seq.int(nrow(heart))
+
+# Assign Character value to Numeric variables
+heart$sexc <-ifelse(heart$sex==1, "Male", "Female")
+heart$smoke <-ifelse(heart$smoking==1, "Yes", "No")
+heart$hbp <- ifelse(heart$high_blood_pressure==1, "Yes","No")
+heart$dia <-ifelse(heart$diabetes==1, "Yes", "No")
+heart$anaemiac <- ifelse(heart$anaemia==1 ,"Yes", "No")
+# Platelets : Hopkins Medicine
+heart$platc <- ifelse(heart$platelets>150000 & heart$platelets <450000, "Platelets Normal", "Platelets Abnormal")
+heart$plat <- ifelse(heart$platelets>150000 & heart$platelets <450000, 0,1)
+
+# Serum Sodium: Mayo Clinic
+heart$sodiumc <- ifelse(heart$serum_sodium >135 & heart$serum_sodium<145, "Serum Sodium Normal", "Serum Sodium Abnormal")
+heart$sodiumn <- ifelse(heart$serum_sodium >135 & heart$serum_sodium<145, 0, 1)
+
+#Creatine Phosphkinase : Mountsinai
+heart$cpk <- ifelse(heart$creatinine_phosphokinase >10 & heart$creatinine_phosphokinase<120, "CPK Normal", "CPK Abnormal")
+heart$cpkn <- ifelse(heart$creatinine_phosphokinase >10 & heart$creatinine_phosphokinase<120, 0, 1)
+
+#ejection_fraction: Mayo
+heart$efraction <-ifelse(heart$ejection_fraction<=75 & heart$ejection_fraction>=41, "Ejection Normal", "Ejection Abnormal")
+heart$efractionn <-ifelse(heart$ejection_fraction<=75 & heart$ejection_fraction>=41, 0, 1)
+
+#serum_creatinine :mayo
+heart$screat<- ifelse((heart$serum_creatinine<1.35 & heart$serum_creatinine>0.74 & heart$sex==1 ) | (heart$serum_creatinine<1.04 & heart$serum_creatinine>0.59 & heart$sex==0) , "Creatinine Normal", "Creatinine Abnormal"   )
+heart$screatn<- ifelse((heart$serum_creatinine<1.35 & heart$serum_creatinine>0.74 & heart$sex==1 ) | (heart$serum_creatinine<1.04 & heart$serum_creatinine>0.59 & heart$sex==0) , 0, 1 )
+
+#age group: Pharma convention  
+heart$agegp <- ifelse( heart$age<65, "Age <65", "Age >=65")
+heart$agegpn <- ifelse( heart$age<65, 0, 1)
+
+#event vs censor
+heart$cnsr <- ifelse(heart$DEATH_EVENT==0, "Censor", "Event")
+```
+
+## Original Data table 
+```{r}
+h1<- subset(heart, select=c(age,anaemia,creatinine_phosphokinase, serum_creatinine,diabetes, ejection_fraction ,high_blood_pressure, platelets , serum_sodium, sex, smoking, DEATH_EVENT))
+head(h1, 5)%>% DT::datatable()
+
+```
+
+
+## Training + Testing Data
+```{r}
+set.seed=8
+train.test.split<-sample(2, nrow(h1), replace=TRUE, prob=c(0.8,0.2))
+train=h1[train.test.split==1,]
+test=h1[train.test.split==2,]
+
+head(test, 5)%>% DT::datatable()
+```
+
+# Exploratory Data Analysis
+
+## Binary Variable Distribution {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+#1. age group
+p1<-ggplot(heart, aes(x=agegp))+geom_bar(fill="lightblue")+ labs(x="Age Group")+ theme_minimal(base_size=10)
+
+#2. Sex
+p2<-ggplot(heart, aes(x=sexc))+geom_bar(fill="indianred3")+ labs(x="Sex")+ theme_minimal(base_size=10)
+
+#3. Smoking
+p3<-ggplot(heart, aes(x=smoke))+geom_bar(fill="seagreen2")+ labs(x="Smoking")+ theme_minimal(base_size=10)
+
+#4. Diabetes
+p4<-ggplot(heart, aes(x=dia))+geom_bar(fill="orange2")+
+  labs(x="Diabetes Status")+ theme_minimal(base_size=10)
+
+#5. cpk
+p5<-ggplot(heart, aes(x=cpk))+geom_bar(fill="lightblue")+
+labs(x="Creatinine Phosphokinase")+ theme_minimal(base_size=10)
+
+#6. Platelets
+p6<-ggplot(heart, aes(x=platc))+geom_bar(fill="indianred2")+
+  labs(x="Platelets")+ theme_minimal(base_size=10)
+
+#7. serum sodium
+p7<-ggplot(heart, aes(x=sodiumc))+geom_bar(fill="seagreen2")+
+  labs(x="Serum Sodium") + theme_minimal(base_size=10)
+
+#8. Serum creatinine
+p8<-ggplot(heart, aes(x=screat))+geom_bar(fill="orange2")+
+  labs(x="Serum Creatinine") + theme_minimal(base_size=10)
+
+
+#9. anaemia 
+p9<-ggplot(heart, aes(x=anaemiac, fill=DEATH_EVENT))+geom_bar(fill="lightblue")+ labs(x="Anaemia")+ theme_minimal(base_size=10)
+
+#10. ejection_fraction
+p10<-ggplot(heart, aes(x=efraction))+geom_bar(fill="indianred2")+
+  labs(x="Ejection Fraction")+ theme_minimal(base_size=10)
+
+#11. High blood pressure
+p11<-ggplot(heart, aes(x=hbp))+geom_bar(fill="seagreen2")+
+  labs(x="High Blood Pressure Status")+ theme_minimal(base_size=10)
+
+#12. Event
+p12<-ggplot(heart, aes(x=cnsr))+geom_bar(fill="orangered3")+ labs(x="Event Status")+ theme_minimal(base_size=10)
+
+```
+
+### Demographic and Baseline Characters Distribution
+
+```{r}
+(p1+p2+p3 +p4)+
+  plot_annotation(title="Demographic and Histology Distribution")
+```
+
+
+### Lab Test Result Distribution
+```{r}
+(p5+p6+p7+p8) + plot_annotation(title="Lab Test Distribution")
+```
+
+
+### Disease history Distribution
+```{r}
+(p9+p10+p11+p12) + plot_annotation(title="Disease History Distribution")
+```
+
+
+## Continuous Variables Disbribution  {.tabset .tabset-fade .tabset-pills}
+
+### Age 
+```{r}
+#1. Age
+c1<- ggplot(heart, aes(x=age))+ geom_histogram(binwidth=5, colour="white", fill="darkseagreen2", alpha=0.8)+
+  geom_density(eval(bquote(aes(y=..count..*5))),colour="darkgreen", fill="darkgreen", alpha=0.3)+ scale_x_continuous(breaks=seq(40,100,10))+geom_vline(xintercept = 65, linetype="dashed")+ annotate("text", x=50, y=45, label="Age <65", size=2.5, color="dark green") + annotate("text", x=80, y=45, label="Age >= 65", size=2.5, color="dark red") +labs(title="Age Distribution") + theme_minimal(base_size = 8)
+c1
+
+```
+
+
+### CPK
+
+```{r}
+
+#2. cpk
+c2<- ggplot(heart, aes(x=creatinine_phosphokinase))+ geom_histogram(binwidth=100, colour="white", fill="mediumpurple2", alpha=0.8)+
+  geom_density(eval(bquote(aes(y=..count..*150))),colour="mediumorchid1", fill="mediumorchid1", alpha=0.3)+ scale_x_continuous(breaks=seq(0,10000,1000))+geom_vline(xintercept = 120, linetype="dashed")+ annotate("text", x=0, y=100, label="CPK Normal", size=2.5, color="dark green") + annotate("text", x=1000, y=80, label="CPK Abnormal", size=2.5, color="dark red")+labs(title="Creatinine Phosphokinase Distribution") + theme_minimal(base_size = 8)
+c2
+```
+
+
+### Ejection Fraction
+```{r}
+c3<- ggplot(heart, aes(x=ejection_fraction))+ geom_histogram(binwidth=5, colour="white", fill="lightpink1", alpha=0.8)+
+  geom_density(eval(bquote(aes(y=..count..*5))),colour="mistyrose2", fill="mistyrose2", alpha=0.3)+ scale_x_continuous(breaks=seq(0,80,10))+geom_vline(xintercept = 40, linetype="dashed")+geom_vline(xintercept = 75, linetype="dashed")+ annotate("text", x=20, y=30, label="Abnormal", size=2.5, color="dark red") + annotate("text", x=50, y=30, label="Normal", color="dark green")+  annotate("text", x=80, y=30, label="Abnormal", size=2.5, color="dark red")+labs(title="Ejection Fraction Distribution") + theme_minimal(base_size = 8)
+c3
+```
+
+### Platelets Count
+```{r}
+c4<- ggplot(heart, aes(x=platelets))+ geom_histogram(binwidth=20000, colour="white", fill="lightskyblue2", alpha=0.8)+
+  geom_density(eval(bquote(aes(y=..count..*25000))),colour="lightsteelblue", fill="lightsteelblue", alpha=0.3)+
+  geom_vline(xintercept = 150000, linetype="dashed")+geom_vline(xintercept = 450000, linetype="dashed")+ annotate("text", x=100000, y=30, label="Abnormal", size=2.5, color="dark red") + annotate("text", x=300000, y=30, label="Normal", color="dark green")+  annotate("text", x=500000, y=30, label="Abnormal", size=2.5, color="dark red")+labs(title="Platelets Count") + theme_minimal(base_size = 8)
+c4
+```
+
+
+
+### Serum Sodium
+```{r}
+c5<- ggplot(heart, aes(x=serum_sodium))+ geom_histogram(binwidth=1, colour="white", fill="lightsalmon", alpha=0.8)+
+  geom_density(eval(bquote(aes(y=..count..))),colour="lightcoral", fill="lightcoral", alpha=0.3)+
+  geom_vline(xintercept = 135, linetype="dashed")+geom_vline(xintercept = 145, linetype="dashed")+ annotate("text", x=130, y=20, label="Abnormal", size=2.5, color="dark red") + annotate("text", x=142, y=20, label="Normal", color="dark green")+  annotate("text", x=148, y=20, label="Abnormal", size=2.5, color="dark red")+labs(title="Serum Sodium") + theme_minimal(base_size = 8)
+c5
+```
+
+
+### Serum Creatinine
+```{r}
+c6<- ggplot(heart, aes(x=serum_creatinine))+ geom_histogram(binwidth=0.2, colour="white", fill="lightgoldenrod", alpha=0.8)+
+  geom_density(eval(bquote(aes(y=..count..*0.2))),colour="moccasin", fill="moccasin", alpha=0.3)+
+  geom_vline(xintercept = 0.74, linetype="dashed")+geom_vline(xintercept = 1.35, linetype="dashed")+ annotate("text", x=0.05, y=20, label="Abnormal", size=2.5, color="dark red") + annotate("text", x=1, y=20, label="Normal", color="dark green")+  annotate("text", x=2.5, y=20, label="Abnormal", size=2.5, color="dark red")+labs(title="Serum Creatinine") + theme_minimal(base_size = 8)
+c6
+```
+
+## Correlations  {.tabset .tabset-fade .tabset-pills}
+
+### Correlation Matrix
+
+From the correlation matrix, we can see Death Event is highly correlated with serum creatinine, age, serum sodium, ejection fraction.
+
+```{r}
+
+r=cor(h1)
+corrplot(r, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 90)
+```
+
+### Heatmap
+
+We will also show the heatmap as a side evidence.
+```{r}
+coul <- colorRampPalette(brewer.pal(8, "PiYG"))(25)
+heatmap(r, scale="column", col = coul)
+```
+
+```{r}
+draw_confusion_matrix <- function(cm) {
+
+  total <- sum(cm$table)
+  res <- as.numeric(cm$table)
+
+  # Generate color gradients. Palettes come from RColorBrewer.
+  greenPalette <- c("#F7FCF5","#E5F5E0","#C7E9C0","#A1D99B","#74C476","#41AB5D","#238B45","#006D2C","#00441B")
+  redPalette <- c("#FFF5F0","#FEE0D2","#FCBBA1","#FC9272","#FB6A4A","#EF3B2C","#CB181D","#A50F15","#67000D")
+  getColor <- function (greenOrRed = "green", amount = 0) {
+    if (amount == 0)
+      return("#FFFFFF")
+    palette <- greenPalette
+    if (greenOrRed == "red")
+      palette <- redPalette
+    colorRampPalette(palette)(100)[10 + ceiling(90 * amount / total)]
+  }
+
+  # set the basic layout
+  layout(matrix(c(1,1,2)))
+  par(mar=c(2,2,2,2))
+  plot(c(100, 345), c(300, 450), type = "n", xlab="", ylab="", xaxt='n', yaxt='n')
+  title('CONFUSION MATRIX', cex.main=2)
+
+  # create the matrix 
+  classes = colnames(cm$table)
+  rect(150, 430, 240, 370, col=getColor("green", res[1]))
+  text(195, 435, classes[1], cex=1.2)
+  rect(250, 430, 340, 370, col=getColor("red", res[3]))
+  text(295, 435, classes[2], cex=1.2)
+  text(125, 370, 'Predicted', cex=1.3, srt=90, font=2)
+  text(245, 450, 'Actual', cex=1.3, font=2)
+  rect(150, 305, 240, 365, col=getColor("red", res[2]))
+  rect(250, 305, 340, 365, col=getColor("green", res[4]))
+  text(140, 400, classes[1], cex=1.2, srt=90)
+  text(140, 335, classes[2], cex=1.2, srt=90)
+
+  # add in the cm results
+  text(195, 400, res[1], cex=1.6, font=2, col='white')
+  text(195, 335, res[2], cex=1.6, font=2, col='white')
+  text(295, 400, res[3], cex=1.6, font=2, col='white')
+  text(295, 335, res[4], cex=1.6, font=2, col='white')
+
+  # add in the specifics 
+  plot(c(100, 0), c(100, 0), type = "n", xlab="", ylab="", main = "DETAILS", xaxt='n', yaxt='n')
+  text(10, 85, names(cm$byClass[1]), cex=1.2, font=2)
+  text(10, 70, round(as.numeric(cm$byClass[1]), 3), cex=1.2)
+  text(30, 85, names(cm$byClass[2]), cex=1.2, font=2)
+  text(30, 70, round(as.numeric(cm$byClass[2]), 3), cex=1.2)
+  text(50, 85, names(cm$byClass[5]), cex=1.2, font=2)
+  text(50, 70, round(as.numeric(cm$byClass[5]), 3), cex=1.2)
+  text(70, 85, names(cm$byClass[6]), cex=1.2, font=2)
+  text(70, 70, round(as.numeric(cm$byClass[6]), 3), cex=1.2)
+  text(90, 85, names(cm$byClass[7]), cex=1.2, font=2)
+  text(90, 70, round(as.numeric(cm$byClass[7]), 3), cex=1.2)
+
+  # add in the accuracy information 
+  text(30, 35, names(cm$overall[1]), cex=1.5, font=2)
+  text(30, 20, round(as.numeric(cm$overall[1]), 3), cex=1.4)
+  text(70, 35, names(cm$overall[2]), cex=1.5, font=2)
+  text(70, 20, round(as.numeric(cm$overall[2]), 3), cex=1.4)
+}
+
+```
+
+```{r}
+library("gbm")
+library("caret")
+gbm.m<- gbm(train$DEATH_EVENT ~. , data=train, distribution = "bernoulli",
+            cv.folds=10, shrinkage=0.01, n.minobsinnode = 10, n.trees=1000)
+#gbm.m
+gbm.imp=summary(gbm.m)
+gbm.imp
+
+gmb.t =predict(object=gbm.m, newdata=test, n.trees=1000, type="response")
+presult<- as.factor(ifelse(gmb.t>0.5,1,0))
+test$DEATH_EVENT1<-as.factor(test$DEATH_EVENT)
+g<-confusionMatrix(presult,test$DEATH_EVENT1)
+draw_confusion_matrix(g)
+
+```
+
+```{r}
+paste("Ejection Fraction:  Normal 41%- 75%, Abnormal <41% or >75%")
+a = heart$ejection_fraction
+mean(a)
+paste("The mean ejection fraction is in the abnormal level")
+paste("Normal levels of serum creatinine 0.74 to 1.35 mg/dL")
+b = heart$serum_creatinine
+mean(b)
+paste("The mean serum creatinine over the normal level")
+paste("A normal platelet count ranges from 150,000 to 450,000 platelets per microliter of blood")
+c = heart$platelets
+mean(c)
+paste("The mean platelet count is within the normal range")
+paste("Two out of the three major factors lie in the abnormal level, hence the lifestyle of the citizens is poor.")
+
+
+```
+

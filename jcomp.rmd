@@ -1,0 +1,242 @@
+---
+title: "Project"
+author: "Siddhant Mhapankar"
+date: "2022-10-13"
+output: html_document
+---
+```{r}
+library(ggplot2)
+library(survival)
+library(gbm)
+library(caret)
+library(pROC)
+library(tree)
+library(ISLR)
+library(vip)
+library(e1071)
+library(tidyverse)
+library(reshape2)
+library(ggfortify)
+library(rpart)
+library(skimr)
+library(corrplot)
+library(kableExtra)
+library(patchwork)
+library(directlabels)
+library(randomForest)
+library(hrbrthemes)
+library(viridis)
+library(RColorBrewer)
+library(DT)
+```
+
+
+```{r}
+heart2 = read.csv("heart.csv")
+```
+
+```{r}
+h2 = subset(heart2, select = c(Age,RestingBP,Cholesterol,FastingBS,MaxHR,Oldpeak,HeartDisease))
+head(h2)%>% DT::datatable()
+```
+
+```{r}
+glimpse(heart2)
+```
+
+```{r}
+summary(heart2)
+```
+
+```{r}
+summary(heart2$Age)
+ggplot(data = heart2, aes(x = Age)) +
+  geom_histogram(color = "darkblue", fill = "lightblue") +
+  labs(title = "Age Histogram Plot", x = "Age", y = "Count") +
+  theme_minimal()
+```
+```{r}
+summary(heart2$Sex)
+ggplot(data = heart2, aes(x = Sex)) +
+  stat_count(fill = "steelblue") +
+  labs(title = "Sex Bar Plot", x = "Sex", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+summary(heart2$Cholesterol)
+ggplot(data = heart2, aes(x = Cholesterol)) +
+  geom_histogram(color = "darkblue", fill = "lightblue") +
+  labs(title = "Serum Cholesterol Histogram Plot", x = "Serum Cholesterol", y = "Count") +
+  theme_minimal()
+```
+```{r}
+ggplot(data = heart2, aes(x = Age)) +
+  geom_boxplot(color = "darkblue", fill = "lightblue") +
+  labs(title = "Age Box Plot", x = "Age") +
+  theme_minimal()
+
+ggplot(data = heart2, aes(x = RestingBP)) +
+  geom_boxplot(color = "darkblue", fill = "lightblue") +
+  labs(title = "Resting Blood Pressure Box Plot", x = "Resting Blood Pressure") +
+  theme_minimal()
+
+ggplot(data = heart2, aes(x = Cholesterol)) +
+  geom_boxplot(color = "darkblue", fill = "lightblue") +
+  labs(title = "Serum Cholesterol Box Plot", x = "Serum Cholesterol") +
+  theme_minimal()
+
+ggplot(data = heart2, aes(x = MaxHR)) +
+  geom_boxplot(color = "darkblue", fill = "lightblue") +
+  labs(title = "Maximum heart2 Rate Box Plot", x = "Maximum heart2 Rate") +
+  theme_minimal()
+
+ggplot(data = heart2, aes(x = Oldpeak)) +
+  geom_boxplot(color = "darkblue", fill = "lightblue") +
+  labs(title = "Numeric Value Measured in Depression Box Plot", x = "Numeric Value Measured in Depression", y = "Count") +
+  theme_minimal()
+```
+```{r}
+#Checking for missing values
+d = complete.cases(heart2)
+heart2[!d,]
+```
+
+```{r}
+#outlier analysis
+RestingBP_out <- boxplot(heart2$RestingBP, plot = FALSE)
+heart2$RestingBP[heart2$RestingBP <= RestingBP_out$stats[1]] <- RestingBP_out$stats[1]
+heart2$RestingBP[heart2$RestingBP >= RestingBP_out$stats[5]] <- RestingBP_out$stats[5]
+
+Cholesterol_out <- boxplot(heart2$Cholesterol, plot = FALSE)
+heart2$Cholesterol[heart2$Cholesterol <= Cholesterol_out$stats[1]] <- Cholesterol_out$stats[1]
+heart2$Cholesterol[heart2$Cholesterol >= Cholesterol_out$stats[5]] <- Cholesterol_out$stats[5]
+
+MaxHR_out <- boxplot(heart2$MaxHR, plot = FALSE)
+heart2$MaxHR[heart2$MaxHR <= MaxHR_out$stats[1]] <- MaxHR_out$stats[1]
+heart2$MaxHR[heart2$MaxHR >= MaxHR_out$stats[5]] <- MaxHR_out$stats[5]
+
+Oldpeak_out <- boxplot(heart2$Oldpeak, plot = FALSE)
+heart2$Oldpeak[heart2$Oldpeak <= Oldpeak_out$stats[1]] <- Oldpeak_out$stats[1]
+heart2$Oldpeak[heart2$Oldpeak >= Oldpeak_out$stats[5]] <- Oldpeak_out$stats[5]
+```
+
+```{r}
+r=cor(h2)
+corrplot(r, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 90)
+```
+
+```{r}
+coul <- colorRampPalette(brewer.pal(8, "PiYG"))(25)
+heatmap(r, scale="column", col = coul)
+```
+
+```{r}
+#Original data
+h2<- subset(heart2, select=c(Age,Sex,ChestPainType, RestingBP,Cholesterol, FastingBS ,RestingECG, MaxHR , ExerciseAngina, Oldpeak, ST_Slope, HeartDisease))
+head(h2, 5)%>% DT::datatable()
+```
+
+
+```{r}
+set.seed=8
+train.test.split<-sample(2, nrow(h2), replace=TRUE, prob=c(0.8,0.2))
+train2=h2[train.test.split==1,]
+test2=h2[train.test.split==2,]
+
+head(train2, 5)%>% DT::datatable()
+head(test2, 5)%>% DT::datatable()
+```
+```{r}
+draw_confusion_matrix <- function(cm) {
+
+  total <- sum(cm$table)
+  res <- as.numeric(cm$table)
+
+  # Generate color gradients. Palettes come from RColorBrewer.
+  greenPalette <- c("#F7FCF5","#E5F5E0","#C7E9C0","#A1D99B","#74C476","#41AB5D","#238B45","#006D2C","#00441B")
+  redPalette <- c("#FFF5F0","#FEE0D2","#FCBBA1","#FC9272","#FB6A4A","#EF3B2C","#CB181D","#A50F15","#67000D")
+  getColor <- function (greenOrRed = "green", amount = 0) {
+    if (amount == 0)
+      return("#FFFFFF")
+    palette <- greenPalette
+    if (greenOrRed == "red")
+      palette <- redPalette
+    colorRampPalette(palette)(100)[10 + ceiling(90 * amount / total)]
+  }
+
+  # set the basic layout
+  layout(matrix(c(1,1,2)))
+  par(mar=c(2,2,2,2))
+  plot(c(100, 345), c(300, 450), type = "n", xlab="", ylab="", xaxt='n', yaxt='n')
+  title('CONFUSION MATRIX', cex.main=2)
+
+  # create the matrix 
+  classes = colnames(cm$table)
+  rect(150, 430, 240, 370, col=getColor("green", res[1]))
+  text(195, 435, classes[1], cex=1.2)
+  rect(250, 430, 340, 370, col=getColor("red", res[3]))
+  text(295, 435, classes[2], cex=1.2)
+  text(125, 370, 'Predicted', cex=1.3, srt=90, font=2)
+  text(245, 450, 'Actual', cex=1.3, font=2)
+  rect(150, 305, 240, 365, col=getColor("red", res[2]))
+  rect(250, 305, 340, 365, col=getColor("green", res[4]))
+  text(140, 400, classes[1], cex=1.2, srt=90)
+  text(140, 335, classes[2], cex=1.2, srt=90)
+
+  # add in the cm results
+  text(195, 400, res[1], cex=1.6, font=2, col='white')
+  text(195, 335, res[2], cex=1.6, font=2, col='white')
+  text(295, 400, res[3], cex=1.6, font=2, col='white')
+  text(295, 335, res[4], cex=1.6, font=2, col='white')
+
+  # add in the specifics 
+  plot(c(100, 0), c(100, 0), type = "n", xlab="", ylab="", main = "DETAILS", xaxt='n', yaxt='n')
+  text(10, 85, names(cm$byClass[1]), cex=1.2, font=2)
+  text(10, 70, round(as.numeric(cm$byClass[1]), 3), cex=1.2)
+  text(30, 85, names(cm$byClass[2]), cex=1.2, font=2)
+  text(30, 70, round(as.numeric(cm$byClass[2]), 3), cex=1.2)
+  text(50, 85, names(cm$byClass[5]), cex=1.2, font=2)
+  text(50, 70, round(as.numeric(cm$byClass[5]), 3), cex=1.2)
+  text(70, 85, names(cm$byClass[6]), cex=1.2, font=2)
+  text(70, 70, round(as.numeric(cm$byClass[6]), 3), cex=1.2)
+  text(90, 85, names(cm$byClass[7]), cex=1.2, font=2)
+  text(90, 70, round(as.numeric(cm$byClass[7]), 3), cex=1.2)
+
+  # add in the accuracy information 
+  text(30, 35, names(cm$overall[1]), cex=1.5, font=2)
+  text(30, 20, round(as.numeric(cm$overall[1]), 3), cex=1.4)
+  text(70, 35, names(cm$overall[2]), cex=1.5, font=2)
+  text(70, 20, round(as.numeric(cm$overall[2]), 3), cex=1.4)
+}
+```
+
+```{r}
+rforest<- randomForest(factor(HeartDisease) ~. , data=train2, ntree=500, importance=TRUE)
+#summary(rforest)
+imp<-varImp(rforest)
+varImpPlot(rforest)
+
+rpredict<- predict(rforest, test2, type="class")
+cm2<-confusionMatrix(rpredict, as.factor(test2$HeartDisease))
+draw_confusion_matrix(cm2)
+```
+```{r}
+paste("We take the top 3 parameters suitable for comparison, which are cholestrol, max heartrate, and Oldpeak")
+paste("The average cholestrol level should be less than 240 mg/dL")
+chol = heart2$Cholesterol
+mean(chol)
+paste("The mean cholestrol levels are within the normal rates")
+hr = heart2$MaxHR
+paste("The average heart rate should not exceed 140 beats per minute")
+mean(hr)
+paste("The mean max heart rate didnt exceed 140 beats per second")
+paste("If the oldpeak value is less than 1.5, the risk of heart failure is low, 1.5 to 4.2 has potential risk and greater than 4.2 has a very high chance of heart failure.")
+opeak = abs(heart2$Oldpeak)
+mean(opeak)
+paste("The mean Oldpeak values are within the normal parameters")
+paste("All the factors are within the normal range, hence the lifestyle of the citizens is very good.")
+```
+
+
